@@ -80,7 +80,7 @@ RISKY_HASHTAGS = {
     "newyearsday", "nude", "petite", "pornfood", "pushups", "single",
     "singlelife", "skype", "snap", "snapchat", "streetphoto", "sunbathing",
     "swole", "tag4like", "tagsforlikes", "teen", "teens", "thought", "todayimwearing",
-    "undies", "valentinesday", "woman", "workflow", "besties", "bikinibody",
+    "undies", "valentinesday", "woman", "workflow", "besties",
 }
 
 

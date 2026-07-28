@@ -53,8 +53,8 @@ class _Completions:
         naming one here would defeat the fallback that keeps a run alive when a
         model is busy or withdrawn.
         """
-        text = self._router.complete(
-            messages=messages or [],
+        text = self._router.complete_messages(
+            messages or [],
             temperature=temperature,
             max_tokens=max_tokens,
         )
@@ -79,8 +79,8 @@ class RouterClient:
 
     def generate_content(self, prompt: str):
         """Gemini-shaped entry point, kept because one caller still uses it."""
-        text = self._router.complete(
-            messages=[{"role": "user", "content": str(prompt)}]
+        text = self._router.complete_messages(
+            [{"role": "user", "content": str(prompt)}]
         )
 
         class _GeminiLike:

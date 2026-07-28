@@ -10,29 +10,18 @@ for every video after it.
 
 from __future__ import annotations
 
-import json
 import os
 import streamlit as st
 
 from utility.captions.caption_styles import CAPTION_STYLES, list_styles
 from utility.core import settings_store
+from utility.pipeline_manager import list_checkpoints
 from utility.script.video_styles import VIDEO_STYLES, get_style as get_script_style
 from utility.tts.voices import list_voices, describe
 from utility.ui import gallery_manager
 from utility.ui.run_helper import STAGE_LABELS, run_pipeline
 
 PROJECT_ROOT = gallery_manager.project_root()
-CHECKPOINT = os.path.join(PROJECT_ROOT, "pipeline_checkpoint.json")
-
-
-def _checkpoint():
-    if not os.path.exists(CHECKPOINT):
-        return None
-    try:
-        with open(CHECKPOINT, "r", encoding="utf-8") as handle:
-            return json.load(handle)
-    except (OSError, json.JSONDecodeError):
-        return None
 
 
 def render():
@@ -148,17 +137,28 @@ def render():
             index=0 if saved.get("RENDER_ENGINE", "moviepy") == "moviepy" else 1,
         )
 
-    checkpoint = _checkpoint()
-    if checkpoint:
-        stage = checkpoint.get("current_stage", "")
-        st.info(
-            f"An unfinished run is saved at **{STAGE_LABELS.get(stage, stage)}** "
-            f"for *{checkpoint.get('topic', '')}*. Using the same topic resumes "
-            f"from there; a different topic starts over."
+    # Each topic keeps its own checkpoint, so several unfinished runs can sit
+    # side by side and starting a new topic never discards an old one.
+    saved_runs = list_checkpoints()
+    if saved_runs:
+        st.markdown("#### Unfinished runs")
+        st.caption(
+            "Each is resumed by generating the same topic again. They do not "
+            "interfere with each other."
         )
-        if st.button("Discard the saved run"):
-            os.remove(CHECKPOINT)
-            st.rerun()
+        for path, state in saved_runs:
+            stage = state.get("current_stage", "")
+            saved_topic = state.get("topic", "")
+            row, action = st.columns([5, 1])
+            row.markdown(
+                f"**{STAGE_LABELS.get(stage, stage)}** — *{saved_topic}*"
+            )
+            if action.button("Discard", key=f"discard_{os.path.basename(path)}"):
+                try:
+                    os.remove(path)
+                except OSError as error:
+                    st.warning(f"Could not remove it: {error}")
+                st.rerun()
 
     if st.button("Generate", type="primary",
                  disabled=bool(missing) or not topic.strip()):

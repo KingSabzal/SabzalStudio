@@ -2,7 +2,10 @@
 
 ## What you need
 
-* Python 3.10 or newer
+* **Python 3.10, 3.11 or 3.12.** Not 3.13: torch 2.3.1 and numpy 1.26.4, both
+  required by the transcription stage, publish no wheels for it, so the install
+  fails outright rather than degrading.
+* **ImageMagick**, for drawing captions. See below.
 * About 3 GB of disk space, mostly for Whisper's transcription model, which
   downloads itself the first time it runs
 * An internet connection while a video is being made
@@ -15,6 +18,41 @@ automatically the first time you run anything.
 ```bash
 pip install -r requirements.txt
 ```
+
+### ImageMagick
+
+Captions are drawn with ImageMagick, which pip cannot install. Without it
+everything else still works and the video renders — with no text on it.
+
+| | |
+|---|---|
+| Debian / Ubuntu | `sudo apt install imagemagick` |
+| Fedora | `sudo dnf install ImageMagick` |
+| Arch | `sudo pacman -S imagemagick` |
+| macOS | `brew install imagemagick` |
+| Windows | [imagemagick.org](https://imagemagick.org/script/download.php#windows), ticking **Install legacy utilities** |
+
+Check it is visible:
+
+```bash
+magick -version     # ImageMagick 7
+convert -version    # ImageMagick 6
+```
+
+If your distribution ships a security policy that blocks MoviePy's usual way of
+passing text, the renderer notices on the first caption and switches to calling
+ImageMagick directly. You do not have to do anything; a line in the log says so.
+
+### Node.js — only for the optional Remotion renderer
+
+The default renderer is MoviePy and needs nothing extra. If you switch
+**Renderer** to `remotion` on the Create tab you also need
+[Node.js 18 or newer](https://nodejs.org/); the first render then installs the
+composer's npm packages, which takes a few minutes.
+
+Remotion is not MIT-licensed. It is free for individuals, non-profits and small
+companies; larger for-profit organisations need a paid licence. See
+<https://remotion.dev/license>.
 
 ## Start
 

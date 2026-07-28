@@ -1,20 +1,13 @@
 import os
 import asyncio
-import imageio_ffmpeg
 
-# Automatically register imageio-ffmpeg binary as ffmpeg.exe in the PATH for Whisper and other subprocesses
-ffmpeg_exe_src = imageio_ffmpeg.get_ffmpeg_exe()
-bin_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin")
-os.makedirs(bin_dir, exist_ok=True)
-ffmpeg_exe_dest = os.path.join(bin_dir, "ffmpeg.exe")
+# Whisper and MoviePy shell out to a plain "ffmpeg", so the bundled binary has
+# to be on PATH before either is imported. One shared helper does it for both
+# this module and app.py, into one location, with the right name per platform.
+from utility.core.ffmpeg_setup import ensure_ffmpeg
 
-if not os.path.exists(ffmpeg_exe_dest):
-    print(f"[Pipeline] Copying bundled ffmpeg to local bin: {ffmpeg_exe_src} -> {ffmpeg_exe_dest}")
-    import shutil
-    shutil.copy2(ffmpeg_exe_src, ffmpeg_exe_dest)
+ensure_ffmpeg(verbose=True)
 
-if bin_dir not in os.environ["PATH"]:
-    os.environ["PATH"] = bin_dir + os.pathsep + os.environ["PATH"]
 from utility.script.script_generator import generate_script
 from utility.audio.audio_generator import generate_audio
 from utility.captions.timed_captions_generator import generate_timed_captions
@@ -58,7 +51,6 @@ def run(topic_argument: str) -> None:
     """
     config = get_config()
     orientation_landscape = config.get_video_orientation()
-    aspect_ratio = "16:9" if orientation_landscape else "9:16"
 
     # Initialize PipelineManager
     manager = PipelineManager(topic_argument)
@@ -225,20 +217,33 @@ def run(topic_argument: str) -> None:
         # Clean/merge intervals
         background_video_urls = merge_empty_intervals(background_video_urls)
 
-        if background_video_urls:
-            print("Compiling media files...")
-            video_output = get_output_media(
-                audio_file_path=voiceover_path,
-                timed_captions=timed_captions,
-                background_video_data=background_video_urls,
-                video_server="pexel", # Just standard downloader
-                background_music_path=background_music_path
+        # No footage means no video. Printing and carrying on used to leave the
+        # stage unchanged and the process exiting 0, so the interface reported
+        # success and showed balloons for a run that produced nothing.
+        if not background_video_urls:
+            raise RuntimeError(
+                "No background clips survived to the render stage, so there is "
+                "nothing to composite.\n"
+                "The checkpoint is saved, so running the same topic again "
+                "resumes from the footage stage."
             )
-            print(f"\nSUCCESS! Final video saved as '{video_output}'")
-            manager.update_data("video_path", video_output)
-            manager.set_stage("7_metadata")
-        else:
-            print("Error: No background video clips found. Cannot render.")
+
+        print("Compiling media files...")
+        video_output = get_output_media(
+            audio_file_path=voiceover_path,
+            timed_captions=timed_captions,
+            background_video_data=background_video_urls,
+            video_server="pexel", # Just standard downloader
+            background_music_path=background_music_path
+        )
+        if not video_output or not os.path.exists(video_output):
+            raise RuntimeError(
+                f"The renderer returned {video_output!r} but no such file "
+                f"exists. Nothing has been lost; the checkpoint is saved."
+            )
+        print(f"\nSUCCESS! Final video saved as '{video_output}'")
+        manager.update_data("video_path", video_output)
+        manager.set_stage("7_metadata")
 
     # 7. Write the upload packages
     if manager.get_stage() == "7_metadata":
@@ -251,50 +256,80 @@ def run(topic_argument: str) -> None:
         # published. This writes all three platform packages in one model call,
         # then measures the result against the platforms' real limits rather
         # than trusting what came back.
+        #
+        # Only the model call is allowed to fail. Everything after it -- naming
+        # the file, moving it into outputs/ and recording it in the gallery --
+        # runs either way. Previously the whole stage sat inside one try/except,
+        # so a metadata failure left the video behind in the project root as
+        # "rendered_video.mp4", unrecorded, and then wiped the checkpoint. The
+        # next run silently overwrote it.
+        packages = None
         try:
             packages = MetadataGenerator(config).generate(
                 topic=topic, script=script, style_name=style_name,
                 duration_seconds=duration,
             )
             manager.update_data("metadata", packages)
+        except Exception as e:
+            print(f"Could not write the upload packages: {e}")
+            print("The video itself is unaffected and is still being saved.")
 
-            # Name the rendered file after the title it will be uploaded
-            # under, with a hyphen between every word. "rendered_video.mp4"
-            # tells you nothing once a few videos are sitting in the folder.
-            video_path = manager.get_data("video_path")
-            if video_path and os.path.exists(video_path):
-                # Finished videos live in outputs/ under the title they will
-                # be uploaded with, so the gallery can list them and the
-                # project root stays clean.
-                folder = gallery_manager.outputs_dir()
-                stem = output_stem(packages["youtube"]["title"], topic)
-                extension = os.path.splitext(video_path)[1] or ".mp4"
-                target = unique_path(folder, stem, extension)
+        # Name the rendered file after the title it will be uploaded under,
+        # with a hyphen between every word. "rendered_video.mp4" tells you
+        # nothing once a few videos are sitting in the folder. Without a
+        # metadata package the topic is used instead, which is still far
+        # better than losing the file.
+        video_path = manager.get_data("video_path")
+        if video_path and os.path.exists(video_path):
+            # Finished videos live in outputs/ under the title they will be
+            # uploaded with, so the gallery can list them and the project root
+            # stays clean.
+            folder = gallery_manager.outputs_dir()
+            title = ""
+            if packages:
+                title = (packages.get("youtube") or {}).get("title") or ""
+            stem = output_stem(title, topic)
+            extension = os.path.splitext(video_path)[1] or ".mp4"
+            target = unique_path(folder, stem, extension)
+            try:
+                os.replace(video_path, target)
+                manager.update_data("video_path", target)
+                print(f"Saved video    : outputs/{os.path.basename(target)}")
+            except OSError as e:
+                print(f"Could not move the video ({e}); it stays as {video_path}.")
+                target = video_path
+
+            packages_path = ""
+            if packages:
                 try:
-                    os.replace(video_path, target)
-                    manager.update_data("video_path", target)
-                    print(f"Saved video    : outputs/{os.path.basename(target)}")
-
                     packages_name = os.path.splitext(
                         os.path.basename(target))[0] + ".txt"
                     packages_path = os.path.join(folder, packages_name)
                     with open(packages_path, "w", encoding="utf-8") as handle:
                         handle.write(to_text(packages))
                     manager.update_data("metadata_path", packages_path)
-
-                    gallery_manager.record(
-                        filename=target, topic=topic,
-                        title=packages["youtube"]["title"], style=style_name,
-                        duration=duration,
-                        orientation="landscape" if orientation_landscape
-                        else "portrait",
-                        packages_file=packages_path,
-                        voice=manager.get_data("voice_used") or "",
-                    )
                 except OSError as e:
-                    print(f"Could not move the video ({e}); "
-                          f"it stays as {video_path}.")
+                    print(f"Could not write the packages file: {e}")
+                    packages_path = ""
 
+            # Record it even when the metadata failed, so the run is never
+            # invisible in the gallery.
+            try:
+                gallery_manager.record(
+                    filename=target, topic=topic,
+                    title=title or topic, style=style_name,
+                    duration=duration,
+                    orientation="landscape" if orientation_landscape
+                    else "portrait",
+                    packages_file=packages_path,
+                    voice=manager.get_data("voice_used") or "",
+                )
+            except Exception as e:
+                print(f"Could not add the video to the gallery index: {e}")
+        elif video_path:
+            print(f"The rendered file {video_path} is missing; nothing to save.")
+
+        if packages:
             report = packages["report"]
             print(f"YouTube title  : {packages['youtube']['title']}")
             print(f"Instagram tags : {report['instagram_hashtag_count']} "
@@ -305,16 +340,12 @@ def run(topic_argument: str) -> None:
                 print(f"{len(report['corrections_applied'])} platform limits "
                       f"were exceeded by the model and have been corrected.")
             print(f"Packages       : {manager.get_data('metadata_path') or 'not written'}")
-        except Exception as e:
-            print(f"Could not write the upload packages: {e}")
 
         manager.set_stage("completed")
 
     if manager.get_stage() == "completed":
         print("\nPipeline execution complete! Resetting checkpoint...")
-        # Reset checkpoint for future runs
-        if os.path.exists("pipeline_checkpoint.json"):
-            try:
-                os.remove("pipeline_checkpoint.json")
-            except Exception as e:
-                print(f"Error cleaning up checkpoint: {e}")
+        # This run is finished, so its checkpoint has nothing left to resume.
+        # Only this topic's file is removed; another topic's unfinished run is
+        # left alone, which the single shared checkpoint could not do.
+        manager.clear()

@@ -14,6 +14,10 @@ import os
 import subprocess
 import tempfile
 
+# Must come before MoviePy: it resizes through PIL constants that Pillow 10
+# removed, and both the 'pop' animation and the safe-box clamp below resize.
+from utility.core import pillow_compat  # noqa: F401
+
 from moviepy.editor import ColorClip, CompositeVideoClip, ImageClip, TextClip
 
 from utility.captions.caption_layout import (
@@ -298,7 +302,7 @@ def _karaoke_clips(words, style, frame_width, frame_height, font_path, start, en
     space_width = _measure_space(style, frame_width, font_path, size)
 
     drawn = []
-    for text, (_, word_start, word_end) in zip(texts, words):
+    for text, (_, word_start, word_end) in zip(texts, words, strict=False):
         base = _make_text_clip(text, style, frame_width, font_path,
                                size_override=size)
         if base is None:

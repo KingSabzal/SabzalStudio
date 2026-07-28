@@ -11,26 +11,18 @@ utility/ui, and the pipeline it drives lives in utility/pipeline_runner.
 import os
 import sys
 
-# Bundle ffmpeg onto the path before anything imports MoviePy or Whisper, both
-# of which shell out to it. A copy is placed in bin/ on first run so there is
-# nothing for the user to install separately.
-import imageio_ffmpeg
-
 _ROOT = os.path.dirname(os.path.abspath(__file__))
-_BIN = os.path.join(_ROOT, "bin")
-os.makedirs(_BIN, exist_ok=True)
-_FFMPEG = os.path.join(_BIN, "ffmpeg.exe")
-
-if not os.path.exists(_FFMPEG):
-    import shutil
-
-    shutil.copy2(imageio_ffmpeg.get_ffmpeg_exe(), _FFMPEG)
-
-if _BIN not in os.environ["PATH"]:
-    os.environ["PATH"] = _BIN + os.pathsep + os.environ["PATH"]
 
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
+
+# Bundle ffmpeg onto the path before anything imports MoviePy or Whisper, both
+# of which shell out to it. A copy is placed in bin/ on first run so there is
+# nothing for the user to install separately. The pipeline subprocess calls the
+# same helper, so there is one copy rather than two in different folders.
+from utility.core.ffmpeg_setup import ensure_ffmpeg  # noqa: E402
+
+ensure_ffmpeg()
 
 
 def _started_by_streamlit() -> bool:

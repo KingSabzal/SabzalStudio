@@ -1013,7 +1013,7 @@ class MediaSourceManager:
         # more likely to serve its HTML page instead of JSON.
         headers = {"Accept": "application/json",
                    "User-Agent": "SabzalStudio/1.0"}
-        for attempt in range(3):
+        for _attempt in range(3):
             try:
                 response = requests.get(
                     f"https://api.openverse.org/v1/{media}/",

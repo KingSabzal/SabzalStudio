@@ -217,35 +217,14 @@ class Config:
         """Get whether captions are enabled"""
         return os.getenv('CAPTIONS_ENABLED', 'true').lower() == 'true'
 
-    def get_caption_font_size(self) -> int:
-        """Get caption font size from config"""
-        return int(os.getenv('CAPTION_FONT_SIZE', '100'))
-    
-    def get_caption_font_color(self) -> str:
-        """Get caption font color from config"""
-        return os.getenv('CAPTION_FONT_COLOR', 'white').lower()
-    
-    def get_caption_stroke_width(self) -> int:
-        """Get caption stroke/outline width from config"""
-        return int(os.getenv('CAPTION_STROKE_WIDTH', '3'))
-    
-    def get_caption_stroke_color(self) -> str:
-        """Get caption stroke/outline color from config"""
-        return os.getenv('CAPTION_STROKE_COLOR', 'black').lower()
-    
-    def get_caption_position(self) -> str:
-        """Captions always sit at bottom centre.
-
-        This is kept so any caller written against the old configuration
-        still works. CAPTION_POSITION is no longer read: the four other
-        positions the project used to offer all placed text somewhere a
-        viewer does not look for it, or somewhere a platform button covers.
-        """
-        return 'bottom_center'
-
-    def get_caption_font_face(self) -> str:
-        """Get caption font face from config (e.g., Arial, Helvetica, Impact, Courier-New)"""
-        return os.getenv('CAPTION_FONT_FACE', 'Arial-Bold')
+    # The individual caption getters that used to live here (font size, colour,
+    # stroke width, stroke colour, position, font face) had no callers left.
+    # Caption styling is decided by a preset in utility.captions.caption_styles
+    # and read straight from the environment by caption_renderer, which applies
+    # the CAPTION_* overrides on top. Keeping a second set of accessors with
+    # different defaults -- font size 100 here against the preset's own, 'white'
+    # against the preset's colour -- only invited a future caller to pick the
+    # wrong one and quietly flatten every preset.
 
 
 

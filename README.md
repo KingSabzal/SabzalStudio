@@ -5,7 +5,9 @@ narration, the footage, the music, the captions and the upload packages all
 produced for you.
 
 Nothing here costs money. Every source is free, and no paid API is used
-anywhere in the pipeline.
+anywhere in the pipeline. (The one caveat is the optional Remotion renderer,
+which carries its own licence for larger companies — see [Licence](#licence).
+The default renderer does not.)
 
 ---
 
@@ -52,10 +54,26 @@ applied silently, so you can see what was changed.
 
 ## Install
 
+Python 3.10, 3.11 or 3.12. Not 3.13 yet: two of the transcription
+dependencies publish no wheels for it.
+
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
+
+**ImageMagick is needed for captions**, and it is the one thing pip cannot
+install for you. Without it the video still renders, but with no text on it.
+
+| | |
+|---|---|
+| Debian / Ubuntu | `sudo apt install imagemagick` |
+| Fedora | `sudo dnf install ImageMagick` |
+| macOS | `brew install imagemagick` |
+| Windows | <https://imagemagick.org/script/download.php#windows> — tick **Install legacy utilities** |
+
+ffmpeg is not a separate install. A copy is bundled and put on the path on
+first run.
 
 Open the **Settings** tab and add two things:
 
@@ -135,3 +153,11 @@ decorative list.
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
+
+One exception worth knowing about. The default renderer is MoviePy and is
+covered by the above. The optional **Remotion** renderer is not MIT: Remotion
+is free for individuals, non-profits and small companies, but a for-profit
+organisation above their size threshold needs a paid company licence. See
+<https://remotion.dev/license>. Nothing in the default path touches it, and
+the ten bundled fonts are OFL 1.1 except Noto Color Emoji, which is Apache 2.0
+— all of them redistributable, including inside a rendered video.

@@ -1,6 +1,45 @@
-import json
 from utility.config import get_config
+from utility.llm.llm_router import extract_json
 from utility.script.video_styles import get_style
+
+# How many times to ask the model again when its reply is not usable JSON.
+MAX_ATTEMPTS = 3
+
+# Prefixes some models put in front of their reply before the JSON starts.
+_REPLY_PREFIXES = ("content:", "content =", "content=", "output:", "json:")
+
+
+def _script_from_reply(content):
+    """Pull the narration text out of whatever the model replied with.
+
+    The previous implementation sliced between the first '{' and the last '}'
+    and handed that to json.loads. That fails on the two things models actually
+    do: adding a sentence after the JSON ("Hope this helps!"), and returning two
+    objects in a row. Both leave a trailing fragment inside the slice, so
+    json.loads raises "Extra data" and the whole run dies.
+
+    utility.llm.llm_router.extract_json already solves this properly: it walks
+    the string tracking brace depth, collects every balanced candidate, tries
+    the longest first and repairs common model mistakes such as a trailing
+    comma. Reusing it removes a second, weaker parser from the codebase.
+    """
+    text = str(content or "").strip()
+    lowered = text.lower()
+    for prefix in _REPLY_PREFIXES:
+        if lowered.startswith(prefix):
+            text = text[len(prefix):].strip()
+            break
+
+    data = extract_json(text)
+    if data is None:
+        raise ValueError("No JSON object found in the model response.")
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected a JSON object, got {type(data).__name__}.")
+
+    script = data.get("script")
+    if not isinstance(script, str) or not script.strip():
+        raise ValueError("The JSON had no usable 'script' field.")
+    return script.strip()
 
 
 def clean_markdown(text):
@@ -131,7 +170,6 @@ def generate_script(topic, style_name=None, duration_seconds=None):
     config = get_config()
     client = config.get_llm_client()
     model = config.get_llm_model()
-    provider = config.get_llm_provider()
 
     if style_name is None:
         style_name = config.get_video_style()
@@ -148,69 +186,52 @@ def generate_script(topic, style_name=None, duration_seconds=None):
 
     prompt = build_prompt(topic, style, duration_seconds, word_count)
 
-    if provider == 'gemini':
-        content = _call_gemini(client, topic, prompt)
-    else:
-        content = _call_openai_groq(client, model, topic, prompt)
+    # Each attempt is a fresh request. A model that wrapped its JSON in prose
+    # once will usually not do it again, and dropping the temperature makes it
+    # markedly less likely, so a retry is worth far more than a cleverer parser.
+    last_error = None
+    temperature = 0.7
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            content = _call_model(client, model, topic, prompt,
+                                  temperature=temperature)
 
-    try:
-        # Remove any common prefix that might be added by LLMs (content:, content =, content=, content: , etc.)
-        text = content
-        for prefix in ['content:', 'content =', 'content =', 'content: ', 'content=']:
-            if text.startswith(prefix):
-                text = text[len(prefix):].strip()
-                break
+            script = _script_from_reply(content)
+            script = clean_markdown(script)
 
-        # Try to find complete JSON object or array
-        json_start = text.find('{')
-        json_end = text.rfind('}')
+            actual = len(script.split())
+            drift = (actual - word_count) / word_count * 100 if word_count else 0
+            print(f"[Script] {actual} words written ({drift:+.0f}% against target)")
 
-        if json_start == -1 or json_end == -1:
-            raise ValueError("No valid JSON found in response")
+            return script
+        except Exception as e:
+            last_error = e
+            print(f"[Script] Attempt {attempt}/{MAX_ATTEMPTS} failed: {e}")
+            # A lower temperature makes the model follow the JSON instruction
+            # far more closely, which is almost always what went wrong.
+            temperature = 0.3
 
-        script_text = text[json_start:json_end+1]
-        script = json.loads(script_text)["script"]
-        script = clean_markdown(script)
-
-        actual = len(script.split())
-        drift = (actual - word_count) / word_count * 100 if word_count else 0
-        print(f"[Script] {actual} words written ({drift:+.0f}% against target)")
-
-        return script
-    except Exception as e:
-        print(f"Error: {e}")
-        raise
+    raise RuntimeError(
+        f"The model did not return a usable script after {MAX_ATTEMPTS} "
+        f"attempts. Last error: {last_error}"
+    )
 
 
-def _call_openai_groq(client, model, topic, prompt):
+def _call_model(client, model, topic, prompt, temperature=0.7):
+    """One request through the router's OpenAI-shaped client.
+
+    A ``provider == 'gemini'`` branch used to sit alongside this, calling
+    ``client.generate_content(contents=[...], generation_config={...})``. It was
+    unreachable -- 'gemini' is not one of the four providers the config accepts
+    -- and it would have raised TypeError if it ever had run, because the
+    compatibility client's generate_content takes a single prompt string.
+    """
     response = client.chat.completions.create(
         model=model,
+        temperature=temperature,
         messages=[
             {"role": "system", "content": prompt},
             {"role": "user", "content": topic}
         ]
     )
     return response.choices[0].message.content
-
-
-def _call_gemini(client, topic, prompt):
-    response = client.generate_content(
-        contents=[
-            {"role": "user", "parts": [{"text": f"{prompt}\n\nTopic: {topic}"}]}
-        ],
-        generation_config={
-            "temperature": 0.7,
-            "top_p": 0.8,
-            "max_output_tokens": 8192,
-        }
-    )
-    text = response.text
-    
-    if text.startswith('```json'):
-        text = text[7:]
-    if text.startswith('```'):
-        text = text[3:]
-    if text.endswith('```'):
-        text = text[:-3]
-    
-    return text.strip()
