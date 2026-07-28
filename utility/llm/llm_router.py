@@ -377,6 +377,31 @@ class SmartLLMRouter:
             {"role": "system", "content": system},
             {"role": "user", "content": prompt},
         ]
+        return self.complete_messages(
+            messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            max_models=max_models,
+        )
+
+    def complete_messages(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+        max_models: int = 15,
+    ) -> str:
+        """Run a completion from a ready-made message list.
+
+        ``complete`` builds a two-message conversation from a system prompt and
+        a user prompt, which covers most callers. The OpenAI-shaped compatibility
+        client already holds a full message list, so it needs this entry point
+        instead: passing that list into ``complete`` would have meant flattening
+        it back into a single string and losing the roles.
+        """
+        if not messages:
+            raise ValueError("complete_messages needs at least one message.")
+
         queue = [e for e in self.build_queue() if not self.breaker.is_open(e.label())]
         if not queue:
             raise AllProvidersFailedError(

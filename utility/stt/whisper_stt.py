@@ -1,71 +1,81 @@
-import whisper_timestamped as whisper
-from whisper_timestamped import load_model, transcribe_timestamped
+"""Word-level transcription of the narration, locally, with Whisper.
+
+Runs on the machine, needs no account and no key. The output is the
+``[((start, end), word), ...]`` list every later stage is built around: the
+caption renderer groups it into presets, and the footage stage uses the same
+timings to decide what each shot has to cover.
+"""
+
+import os
 import re
 
+from whisper_timestamped import load_model, transcribe_timestamped
 
-def generate_timed_captions(audio_filename, model_size="base"):
-    WHISPER_MODEL = load_model(model_size)
-    
-    gen = transcribe_timestamped(WHISPER_MODEL, audio_filename, verbose=False, fp16=False)
-    
+# Model size, overridable so a slower machine can drop to 'tiny' and a fast one
+# can gain accuracy with 'small'. 'base' stays the default: it is the size the
+# caption timings were tuned against.
+DEFAULT_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "base").strip() or "base"
+
+# Loading a model reads several hundred megabytes from disk and rebuilds it on
+# the device. It used to happen on every call, which cost that much again for
+# each video in a batch. The model is stateless once loaded, so it is cached.
+_MODEL_CACHE = {}
+
+
+def _device():
+    """Use the GPU when there is one; fp16 is only valid there."""
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda"
+    except Exception:  # noqa: BLE001 - torch is optional at import time here
+        pass
+    return "cpu"
+
+
+def get_model(model_size=None):
+    """Load a Whisper model, reusing it across calls in this process."""
+    size = model_size or DEFAULT_MODEL_SIZE
+    device = _device()
+    key = (size, device)
+    if key not in _MODEL_CACHE:
+        print(f"[Whisper] Loading the '{size}' model on {device}. "
+              f"The first run downloads it.")
+        _MODEL_CACHE[key] = load_model(size, device=device)
+    return _MODEL_CACHE[key]
+
+
+def generate_timed_captions(audio_filename, model_size=None):
+    """Transcribe a narration file into word-level timings."""
+    model = get_model(model_size)
+    # fp16 is a GPU feature. Forcing it off everywhere left CUDA machines
+    # running in fp32, which is roughly twice as slow for no gain in accuracy.
+    use_fp16 = _device() == "cuda"
+
+    gen = transcribe_timestamped(model, audio_filename, verbose=False,
+                                 fp16=use_fp16)
+
     return getCaptionsWithTime(gen)
 
 
-def splitWordsBySize(words, maxCaptionSize):
-    
-    halfCaptionSize = maxCaptionSize / 2
-    captions = []
-    while words:
-        caption = words[0]
-        words = words[1:]
-        while words and len(caption + ' ' + words[0]) <= maxCaptionSize:
-            caption += ' ' + words[0]
-            words = words[1:]
-            if len(caption) >= halfCaptionSize and words:
-                break
-        captions.append(caption)
-    return captions
-
-
-def getTimestampMapping(whisper_analysis):
-    index = 0
-    locationToTimestamp = {}
-    text = whisper_analysis['text']
-    
-    for segment in whisper_analysis['segments']:
-        for word in segment['words']:
-            clean_text = cleanWord(word['text'])
-            newIndex = index + len(clean_text)+1
-            locationToTimestamp[(index, newIndex)] = (word['start'], word['end'])
-            index = newIndex
-    return locationToTimestamp
-
-
 def cleanWord(word):
-    
+
     return re.sub(r'[^\w\s\-_%\']', '', word)
 
 
-def interpolateTimeFromDict(word_position, d):
-    
-    for key, value in d.items():
-        if key[0] <= word_position <= key[1]:
-            return value
-    return None
-
-
 def getCaptionsWithTime(whisper_analysis, maxCaptionSize=15, considerPunctuation=False):
-    
+
     CaptionsPairs = []
     last_end = 0
-    
+
     for segment in whisper_analysis['segments']:
         for word_info in segment['words']:
             clean_word = cleanWord(word_info['text'])
             if clean_word:
                 start = word_info['start']
                 end = word_info['end']
-                
+
                 # Fix all timestamp issues including multiple words with same end time
                 # Check if there's any problem: zero duration, backwards, or overlap
                 if start >= end or start < last_end or end <= last_end:
@@ -73,10 +83,10 @@ def getCaptionsWithTime(whisper_analysis, maxCaptionSize=15, considerPunctuation
                     start = last_end
                     # Set end slightly forward to ensure minimum duration
                     end = last_end + 0.3
-                
+
                 # Update last_end for next word
                 last_end = end
-                
+
                 CaptionsPairs.append(((start, end), clean_word))
-    
+
     return CaptionsPairs

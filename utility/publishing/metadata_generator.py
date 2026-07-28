@@ -20,10 +20,10 @@ the script itself, because a video with no metadata cannot be published at all.
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Any, Dict, List, Optional
 
+from utility.llm.llm_router import extract_json
 from utility.publishing.platform_standards import (
     INSTAGRAM,
     TIKTOK,
@@ -88,24 +88,22 @@ Return strictly this JSON and nothing else:
 def _extract_json(text: str) -> Optional[Any]:
     """Pull a JSON object out of an LLM reply.
 
-    Models wrap JSON in prose or code fences often enough that parsing the
-    raw string fails regularly. This finds the outermost object instead.
+    Models wrap JSON in prose or code fences often enough that parsing the raw
+    string fails regularly.
+
+    This used to slice between the first '{' and the last '}', which broke on
+    the two things models actually do: adding a closing sentence after the JSON,
+    and returning two objects in a row. Both leave a trailing fragment inside
+    the slice, so json.loads raises and the caller falls back to a keyword-built
+    package -- silently, so the user never learns the model output was discarded.
+
+    utility.llm.llm_router.extract_json handles both cases: it tracks brace
+    depth, collects every balanced candidate, tries the longest first and
+    repairs trailing commas. One parser, used everywhere.
     """
     if not text:
         return None
-    cleaned = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.MULTILINE)
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        pass
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start == -1 or end <= start:
-        return None
-    try:
-        return json.loads(cleaned[start:end + 1])
-    except json.JSONDecodeError:
-        return None
+    return extract_json(text)
 
 
 def _trim(text: str, limit: int) -> str:
@@ -168,27 +166,34 @@ class MetadataGenerator:
             ig_alt=INSTAGRAM["alt_text_max"],
             tt_visible=TIKTOK["caption_visible"],
         )
+        # A `provider == "gemini"` branch used to sit here; 'gemini' is not one
+        # of the four providers the config accepts, so it was unreachable.
         try:
             client = self.config.get_llm_client()
-            provider = self.config.get_llm_provider()
             model = self.config.get_llm_model()
-            if provider == "gemini":
-                response = client.generate_content(prompt)
-                raw = response.text
-            else:
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {"role": "system",
-                         "content": "You write publishing metadata and return only JSON."},
-                        {"role": "user", "content": prompt},
-                    ],
-                )
-                raw = response.choices[0].message.content
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system",
+                     "content": "You write publishing metadata and return only JSON."},
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            raw = response.choices[0].message.content
         except Exception as error:
             print(f"[metadata] The model call failed: {error}")
             return None
-        return _extract_json(raw)
+
+        data = _extract_json(raw)
+        if data is None:
+            # Say what came back. Returning None silently sends the caller to
+            # the keyword-built fallback, and the user is left wondering why
+            # their title reads like a machine wrote it -- because it did, but
+            # not the one they configured.
+            preview = " ".join(str(raw or "").split())[:160]
+            print(f"[metadata] The reply contained no usable JSON. "
+                  f"It began: {preview!r}")
+        return data
 
     # ------------------------------------------------------------------
     def _fallback(self, topic: str, script: str) -> Dict[str, Any]:

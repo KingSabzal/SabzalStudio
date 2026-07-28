@@ -71,7 +71,7 @@ def _build_browser_agents() -> List[str]:
                 f"Mozilla/5.0 ({platform}) AppleWebKit/537.36 (KHTML, like Gecko) "
                 f"Chrome/{major}.0.0.0 Safari/537.36 Edg/{major}.0.0.0"
             )
-    for major, opera in zip(range(112, 128), range(98, 114)):
+    for major, opera in zip(range(112, 128), range(98, 114), strict=False):
         agents.append(
             f"Mozilla/5.0 ({windows[0]}) AppleWebKit/537.36 (KHTML, like Gecko) "
             f"Chrome/{major}.0.0.0 Safari/537.36 OPR/{opera}.0.0.0"

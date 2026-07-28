@@ -1,0 +1,39 @@
+# Settings. Holds API keys in plain text -- must never be committed.
+config.json
+.env
+
+# Generated media and run state
+outputs/
+bin/
+utility/bin/
+rendered_video.mp4
+audio_tts.wav
+background_music.mp3
+pipeline_checkpoint.json
+pipeline_checkpoint.*.json
+
+# Caches written at run time
+assets/api_cache/
+.logs/
+remotion-composer/out/
+remotion-composer/public/props.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

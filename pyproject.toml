@@ -1,0 +1,24 @@
+[tool.ruff]
+# Only the checks that catch real defects. This project's style is deliberate
+# and largely consistent; reformatting it would bury the substantive history
+# under noise.
+line-length = 100
+target-version = "py310"
+exclude = ["remotion-composer", "bin", "outputs", ".venv", "venv"]
+
+[tool.ruff.lint]
+select = [
+    "F",    # pyflakes: undefined names, unused imports, unused variables
+    "E9",   # syntax and IO errors
+    "B",    # bugbear: mutable default arguments, unused loop variables
+]
+ignore = [
+    "B008",  # function call in default argument -- used intentionally here
+    "B904",  # raise ... from ... inside except; noisy on this codebase
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Import the project from the repository root without needing an install.
+pythonpath = ["."]
+addopts = "-q"

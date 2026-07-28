@@ -77,7 +77,7 @@ def getVideoSearchQueriesTimed(script,captions_timed):
             
             # Extract words spoken during this segment
             segment_words = []
-            for (w_t1, w_t2), word in captions_timed:
+            for (w_t1, _w_t2), word in captions_timed:
                 # Check if word overlaps with segment
                 if w_t1 >= t and w_t1 < t_next:
                     clean = re.sub(r'[^\w\s]', '', str(word).lower()).strip()
@@ -97,36 +97,26 @@ def call_OpenAI(script,captions_timed):
     config = get_config()
     client = config.get_llm_client()
     model = config.get_llm_model()
-    provider = config.get_llm_provider()
-    
+
     user_content = """Script: {}
 Timed Captions:{}
 """.format(script,"".join(map(str,captions_timed)))
-    print("Content", user_content)
-    
-    if provider == 'gemini':
-        response = client.generate_content(
-            contents=[
-                {"role": "user", "parts": [{"text": f"{prompt}\n\n{user_content}"}]}
-            ],
-            generation_config={
-                "temperature":1.0,
-                "top_p": 0.9,
-                "max_output_tokens": 8192,
-            }
-        )
-        text = response.text.strip()
-    else:
-        response = client.chat.completions.create(
-            model=model,
-            temperature=1,
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": user_content}
-            ]
-        )
-        text = response.choices[0].message.content.strip()
-    
+
+    # A `provider == 'gemini'` branch used to sit here. It was unreachable
+    # ('gemini' is not one of the four providers the config accepts) and it
+    # referenced the module-level `prompt` inside an f-string in a way that
+    # would have raised had it ever run.
+    response = client.chat.completions.create(
+        model=model,
+        temperature=1,
+        messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": user_content}
+        ]
+    )
+    text = response.choices[0].message.content.strip()
+
+
     text = re.sub('\s+', ' ', text)
     
     if text.startswith('```json'):
@@ -153,8 +143,7 @@ Timed Captions:{}
     text = text.strip()
     
     try:
-        parsed = json.loads(text)
-        print("Text", text)
+        json.loads(text)   # parse only to prove it is valid
         log_response(LOG_TYPE_GPT,script,text)
         return text
     except json.JSONDecodeError as e:
@@ -167,7 +156,7 @@ Timed Captions:{}
             last_bracket = text.rfind(']')
             if last_bracket > 0:
                 trimmed = text[:last_bracket+1]
-                parsed = json.loads(trimmed)
+                json.loads(trimmed)   # parse only to prove it is valid
                 print(f"Successfully trimmed JSON to {len(trimmed)} chars")
                 log_response(LOG_TYPE_GPT,script,trimmed)
                 return trimmed
@@ -179,34 +168,11 @@ Timed Captions:{}
         default_json = '[[[0.16, 5.29], ["default background video", "stock footage", "generic scene"]], [[5.29, 10.29], ["stock video", "background footage", "video content"]]]'
         return default_json
 
-def merge_empty_intervals(segments):
-    if segments is None:
-        print("No background videos available to merge")
-        return None
-    
-    merged = []
-    i = 0
-    while i < len(segments):
-        interval, url = segments[i]
-        if url is None:
-            # Find consecutive None intervals
-            j = i + 1
-            while j < len(segments) and segments[j][1] is None:
-                j += 1
-            
-            # Merge consecutive None intervals with the previous valid URL
-            if i > 0:
-                prev_interval, prev_url = merged[-1]
-                if prev_url is not None and prev_interval[1] == interval[0]:
-                    merged[-1] = [[prev_interval[0], segments[j-1][0][1]], prev_url]
-                else:
-                    merged.append([interval, prev_url])
-            else:
-                merged.append([interval, None])
-            
-            i = j
-        else:
-            merged.append([interval, url])
-            i += 1
-    
-    return merged
+# merge_empty_intervals used to be defined here as well, in an older form that
+# left a gap at the very start of the timeline unfilled -- so a video whose
+# first segment found no clip opened on black. utility.media.media_manager holds
+# the corrected version, which back-fills a leading gap from the first clip that
+# does exist, and that is the one the pipeline imports. Re-export it here so any
+# code still importing it from this module gets the fixed behaviour rather than
+# a silently different second copy.
+from utility.media.media_manager import merge_empty_intervals  # noqa: E402,F401
