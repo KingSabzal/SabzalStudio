@@ -483,20 +483,30 @@ def suggest_settings(
     from utility.tts.voices import describe, pick_voice
 
     if analysis is None:
+        from utility.script.script_generator import clamp_auto_duration
+
+    if analysis is None:
         from utility.articles.article_analyzer import analyze as _analyze
 
         analysis = _analyze(article)
     if duration_seconds is None:
         duration_seconds = analysis.recommended_duration
 
+    # Held inside the Shorts window however long the article is. A dense piece
+    # can support a five-minute script, but the visuals cannot: the footage is
+    # stock, and there are not enough distinct relevant clips in the free
+    # catalogues to carry five minutes without the same shots coming round
+    # again. A tight short beats a padded long one, and everything this mode
+    # produces is destined for a vertical feed anyway.
+    duration_seconds = clamp_auto_duration(duration_seconds)
+
     category = categorize(article)
     candidates = [s for s in CATEGORY_STYLE_HINTS.get(category, [])
                   if s in VIDEO_STYLES]
     style_name = _style_for_emotion(analysis.emotion, candidates)
 
-    # URL mode chooses everything, exactly like trend mode. Under two minutes
-    # goes vertical for the short form feeds; a longer piece goes wide.
-    orientation = "portrait" if duration_seconds < 120 else "landscape"
+    # Always vertical, because everything this mode produces is a Short.
+    orientation = "portrait"
     voice = pick_voice(style_name, analysis.clean_title)
 
     return {
