@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -29,7 +30,31 @@ if not LOGGER.handlers:
     LOGGER.addHandler(_handler)
 LOGGER.setLevel(logging.INFO)
 
-TIMEOUT_SECONDS = 30
+def _timeout_from_env(name: str, default: int) -> int:
+    """Read a timeout override, ignoring anything that is not a sane number."""
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(float(raw))
+    except ValueError:
+        LOGGER.warning("%s=%r is not a number; using %ds.", name, raw, default)
+        return default
+    return value if 5 <= value <= 3600 else default
+
+
+# How long to wait for the model list. Discovery is a small GET and 30s is
+# generous for every hosted provider.
+DISCOVERY_TIMEOUT_SECONDS = _timeout_from_env("LLM_DISCOVERY_TIMEOUT", 30)
+
+# How long to wait for a completion. A hosted provider answers in seconds, but
+# a local model generating a few thousand tokens on a modest GPU can take
+# minutes -- and a cold one has to load several gigabytes into VRAM before it
+# produces a single token. 30s was fine for the cloud and made a local model
+# unusable: the trend stage asks for 5000 tokens and timed out every time.
+#
+# Set LLM_TIMEOUT to raise it.
+TIMEOUT_SECONDS = _timeout_from_env("LLM_TIMEOUT", 30)
 RETRYABLE_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
 CIRCUIT_BREAKER_LIMIT = 3
 
