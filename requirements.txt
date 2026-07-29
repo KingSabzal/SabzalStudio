@@ -1,7 +1,12 @@
 # SabzalStudio dependencies.
 #
-# Python 3.10 - 3.12. Not 3.13: torch 2.3.1 and numpy 1.26.4 publish no wheels
-# for it, so `pip install` fails outright rather than degrading.
+# Python 3.10 - 3.12.
+#
+# Nothing here is pinned to an exact version unless a real incompatibility
+# demands it. An over-tight pin is not "safe": on a host that already ships a
+# working build (Colab, Kaggle, a GPU image) pip will tear it out and install
+# a worse one, and downgrading a compiled package over an existing install can
+# leave mismatched .so files behind.
 #
 # Only direct dependencies are pinned. Transitive ones (aiosignal, frozenlist,
 # h11, httpcore, multidict, yarl and the rest) were pinned here previously,
@@ -33,8 +38,18 @@ openai-whisper>=20250625
 whisper-timestamped==1.15.4
 Cython>=3.0.10            # build dependency of whisper-timestamped
 dtw-python>=1.5.1         # whisper-timestamped's alignment backend
-torch==2.3.1              # no cp313 wheel; see the Python note above
-numpy>=1.26.4,<2          # whisper and numba are not numpy 2 ready
+# openai-whisper asks for a bare "torch" with no bound, so there is no reason
+# to pin one. Pinning 2.3.1 was actively harmful on Colab and similar hosts,
+# which ship a torch built against their own CUDA: pip would replace a working
+# GPU build with an ~800 MB CPU one. Any torch >= 2 works.
+torch>=2.0
+# Bounded by numba, which whisper pulls in, not by whisper itself. numba 0.60
+# takes numpy<2.1, 0.61 takes <2.2, 0.62 takes <2.4 -- so pip resolves this
+# against whichever numba it picks. Pinning numpy<2 outright was wrong: it
+# forced a downgrade on hosts that already ship a compatible numpy 2.0, and a
+# downgrade over an existing install leaves stale compiled .so files behind,
+# which surfaces as "numpy.dtype size changed" on the next import.
+numpy>=1.26.4
 
 # --- Video and images ------------------------------------------------
 moviepy==1.0.3
