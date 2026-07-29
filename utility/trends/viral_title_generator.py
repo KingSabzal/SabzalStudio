@@ -20,6 +20,7 @@ from utility.llm.router_config import get_config
 
 from utility.llm.llm_router import SmartLLMRouter, get_router
 from utility.media.media_sources import music_moods_for_style
+from utility.script.script_generator import clamp_auto_duration
 from utility.trends.trend_analyzer import TrendAnalyzer
 from utility.media.media_sources import visual_keywords_for_style
 from utility.tts.voices import describe, pick_voice
@@ -92,7 +93,9 @@ For each suggestion also decide:
 - category: one of Technology, Entertainment, Science, Politics, Sports, Health, Business, Culture, Mystery, Controversy
 - angle: the creative angle you used
 - source_trend: the exact trend title you built on
-- recommended_duration_seconds: 45-90 for a fast reaction Short, 180-300 for an explainer
+- recommended_duration_seconds: between 30 and 170. Every video this mode makes
+  is a vertical Short, so pick 30-60 for a single sharp fact, 60-120 for a story
+  with a turn in it, and up to 170 only when the subject genuinely needs it.
 - topic: a one-sentence description of the video content
 - keywords: 5 SEO keywords
 
@@ -318,13 +321,17 @@ class ViralTitleGenerator:
         score = self.scorer.score(title, trend_keywords, platform_count,
                                   history_titles)
 
-        style_name = self._pick_style(category, title)
-        duration = int(item.get("recommended_duration_seconds", 60) or 60)
-        duration = max(20, min(duration, 600))
+                style_name = self._pick_style(category, title)
 
-        # Under two minutes belongs in the vertical feeds; longer pieces are
-        # watched on a wide screen.
-        orientation = "portrait" if duration < 120 else "landscape"
+        # Held inside the Shorts window whatever the model suggested. The
+        # footage is stock: a long video needs more distinct clips than the
+        # free catalogues hold for one topic, so the same shots come round
+        # again and the result is worse than a tight short would have been.
+        duration = clamp_auto_duration(
+            item.get("recommended_duration_seconds", 60))
+
+        # Always vertical, because everything this mode produces is a Short.
+        orientation = "portrait"
 
         # Seeded on the topic, so the same subject always gets the same
         # narrator and a re-run sounds like the same channel.
