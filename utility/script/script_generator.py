@@ -74,8 +74,34 @@ def clean_markdown(text):
 # 140 words no matter what, which made every video the same length.
 WORDS_PER_MINUTE = 140
 
-# Below this a video is a vertical Short and is written to different rules.
-SHORTS_MAX_SECONDS = 120
+# YouTube counts anything up to three minutes as a Short, and Instagram and
+# TikTok both take vertical video of that length too. This was 120, which left
+# a gap: a 150-second video was written to long-form rules and rendered
+# landscape even though every platform would still have filed it as a Short.
+SHORTS_MAX_SECONDS = 180
+
+# What the two automatic modes are allowed to produce.
+#
+# The footage is stock. A four-minute video needs roughly eighty clips, and
+# there are not eighty distinct relevant clips in the free catalogues for any
+# given topic -- so the same shots repeat, and a repetitive long video is worse
+# than no video. Short form is also where this kind of footage genuinely works,
+# because no single shot is on screen long enough to be studied.
+#
+# So Trends and From-a-link stay inside the Shorts window and stay vertical.
+# The Manual tab is untouched: there the user has decided, and may well have a
+# reason.
+AUTO_MODE_MIN_SECONDS = 30
+AUTO_MODE_MAX_SECONDS = 170   # a little under the 180 limit, for safety
+
+
+def clamp_auto_duration(seconds):
+    """Hold an automatically chosen duration inside the Shorts window."""
+    try:
+        seconds = int(float(seconds))
+    except (TypeError, ValueError):
+        seconds = 60
+    return max(AUTO_MODE_MIN_SECONDS, min(seconds, AUTO_MODE_MAX_SECONDS))
 
 
 def words_for_duration(seconds):
