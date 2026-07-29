@@ -45,27 +45,27 @@ def _script_from_reply(content):
 def clean_markdown(text):
     """Remove markdown formatting from text to prevent TTS issues."""
     import re
-    
+
     # Remove bold formatting (**text**)
     text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
-    
+
     # Remove italic formatting (*text* or _text_)
     text = re.sub(r'\*(.*?)\*', r'\1', text)
     text = re.sub(r'_(.*?)_', r'\1', text)
-    
+
     # Remove code formatting (`text` or ```text```)
     text = re.sub(r'`(.*?)`', r'\1', text)
     text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
-    
+
     # Remove headers (# text)
     text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
-    
+
     # Remove links [text](url) -> text
     text = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', text)
-    
+
     # Clean up extra whitespace
     text = re.sub(r'\s+', ' ', text)
-    
+
     return text.strip()
 
 
