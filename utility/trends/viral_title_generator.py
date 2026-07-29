@@ -321,7 +321,7 @@ class ViralTitleGenerator:
         score = self.scorer.score(title, trend_keywords, platform_count,
                                   history_titles)
 
-                style_name = self._pick_style(category, title)
+        style_name = self._pick_style(category, title)
 
         # Held inside the Shorts window whatever the model suggested. The
         # footage is stock: a long video needs more distinct clips than the
@@ -349,8 +349,11 @@ class ViralTitleGenerator:
             "sfx_density": "high" if duration < 60 else "medium",
             "caption_style": caption_style,
             "emoji_enabled": category in ("Entertainment", "Sports", "Culture"),
-            "target_platforms": (["YouTube", "Instagram", "TikTok"]
-                                 if duration < 120 else ["YouTube"]),
+            # Everything this mode makes is now inside the Shorts window and
+            # vertical, so all three feeds take it. This used to drop to
+            # YouTube alone above 120s, which no longer describes anything
+            # produced here.
+            "target_platforms": ["YouTube", "Instagram", "TikTok"],
         }
 
         return {
