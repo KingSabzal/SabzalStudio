@@ -6,10 +6,42 @@ caption renderer groups it into presets, and the footage stage uses the same
 timings to decide what each shot has to cover.
 """
 
+import contextlib
 import os
 import re
 
 from whisper_timestamped import load_model, transcribe_timestamped
+
+
+def _attention_weights_available():
+    """Force Whisper to compute attention weights, which word timing needs.
+
+    openai-whisper 20240930 and later default to PyTorch's fused
+    scaled_dot_product_attention. It is faster, but it never materialises the
+    attention matrix, so ``qkv_attention`` returns ``qk = None``.
+
+    whisper-timestamped derives each word's start and end from exactly those
+    weights. It installs a forward hook that reads ``w.shape``, so against a
+    modern whisper every transcription dies with:
+
+        AttributeError: 'NoneType' object has no attribute 'shape'
+
+    Upstream anticipated this and ships ``whisper.model.disable_sdpa()``, a
+    context manager that switches back to the explicit path for the duration
+    of a call. Using it costs a little speed on the transcription stage and
+    nothing anywhere else, and it is the supported way to ask for the weights
+    rather than a monkey-patch of our own.
+
+    Returns a null context on older whisper builds, which never used SDPA and
+    therefore always produced the weights.
+    """
+    try:
+        from whisper.model import disable_sdpa
+
+        return disable_sdpa()
+    except ImportError:
+        return contextlib.nullcontext()
+
 
 # Model size, overridable so a slower machine can drop to 'tiny' and a fast one
 # can gain accuracy with 'small'. 'base' stays the default: it is the size the
@@ -53,8 +85,11 @@ def generate_timed_captions(audio_filename, model_size=None):
     # running in fp32, which is roughly twice as slow for no gain in accuracy.
     use_fp16 = _device() == "cuda"
 
-    gen = transcribe_timestamped(model, audio_filename, verbose=False,
-                                 fp16=use_fp16)
+    # Without this the fused attention path returns no weights and
+    # whisper-timestamped cannot time the words. See the note above.
+    with _attention_weights_available():
+        gen = transcribe_timestamped(model, audio_filename, verbose=False,
+                                     fp16=use_fp16)
 
     return getCaptionsWithTime(gen)
 
