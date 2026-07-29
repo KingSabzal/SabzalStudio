@@ -476,14 +476,13 @@ def suggest_settings(
     article: Article, duration_seconds: Optional[int] = None, analysis: Any = None
 ) -> Dict[str, Any]:
     """Derive the full set of video settings from an extracted and analyzed article."""
-    
+
     from utility.captions.caption_styles import style_for_video_style
     from utility.media.media_sources import music_moods_for_style
     from utility.script.video_styles import VIDEO_STYLES
     from utility.tts.voices import describe, pick_voice
 
-    if analysis is None:
-        from utility.script.script_generator import clamp_auto_duration
+    from utility.script.script_generator import clamp_auto_duration
 
     if analysis is None:
         from utility.articles.article_analyzer import analyze as _analyze
